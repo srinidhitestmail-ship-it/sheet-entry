@@ -219,10 +219,12 @@
     const base64Image = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 
     try {
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify({ action: 'readLabel', image: base64Image }));
+
       const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'readLabel', image: base64Image })
+        body: formData
       });
 
       const data = await response.json();
@@ -263,11 +265,14 @@
     btn.disabled = true;
     btn.textContent = "Submitting…";
     try {
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify({ action: 'saveData', serial: serial }));
+
       const response = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: 'saveData', serial: serial })
+        method: 'POST',
+        body: formData
       });
+
       const data = await response.json();
       if (data.status === 'success') {
         status.className = "status success";
@@ -278,7 +283,7 @@
       }
     } catch (err) {
       status.className = "status error";
-      status.textContent = "✗ Submission failed: " + err.message;
+      status.textContent = "✗ Failed: " + err.message;
     }
     btn.disabled = false;
     btn.textContent = "Submit to Sheet";
