@@ -68,21 +68,16 @@
     .modal-title { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700; }
     .close-btn { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 0.2rem 0.4rem; }
     .close-btn:hover { color: var(--text); }
-
     .video-wrap {
       position: relative; width: 100%; border-radius: 10px;
       overflow: hidden; background: #000; aspect-ratio: 4/3;
     }
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas { display: none; }
-
-    /* Target zone overlay - highlights bottom portion where big number is */
     .target-zone {
-      position: absolute;
-      left: 5%; right: 5%;
+      position: absolute; left: 5%; right: 5%;
       bottom: 10%; height: 28%;
-      border: 2px solid var(--accent);
-      border-radius: 6px;
+      border: 2px solid var(--accent); border-radius: 6px;
       box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
     }
     .target-label {
@@ -95,7 +90,6 @@
     .corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 3px 0 0; }
     .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 3px; }
     .corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
-
     .scan-status {
       margin-top: 0.8rem; text-align: center;
       font-size: 0.75rem; color: var(--muted); min-height: 1.4rem;
@@ -103,7 +97,6 @@
     .scan-status.found { color: var(--accent); font-weight: 500; }
     .scan-status.error { color: #ff6b6b; }
     .scan-status.working { color: #f0a500; }
-
     .capture-btn {
       width: 100%; margin-top: 1rem; background: var(--accent); color: #0f0f0f;
       border: none; border-radius: 8px; padding: 0.85rem;
@@ -113,12 +106,7 @@
     }
     .capture-btn:hover { background: #d8ff3a; transform: translateY(-1px); }
     .capture-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-
-    .tip {
-      margin-top: 0.8rem; font-size: 0.68rem; color: #444;
-      text-align: center; line-height: 1.5;
-    }
-
+    .tip { margin-top: 0.8rem; font-size: 0.68rem; color: #444; text-align: center; line-height: 1.5; }
     button.submit-btn {
       margin-top: 1.8rem; width: 100%; background: var(--accent);
       color: #0f0f0f; border: none; border-radius: 8px; padding: 0.85rem;
@@ -134,6 +122,7 @@
   </style>
 </head>
 <body>
+
 <div class="card">
   <div class="sheet-label">testsheet · col A</div>
   <h1>Data Entry</h1>
@@ -157,7 +146,6 @@
       <span class="modal-title">📷 Scan Label</span>
       <button class="close-btn" onclick="closeScanner()">✕</button>
     </div>
-
     <div class="video-wrap">
       <video id="video" autoplay playsinline muted></video>
       <canvas id="canvas"></canvas>
@@ -169,16 +157,9 @@
         <div class="corner br"></div>
       </div>
     </div>
-
     <div class="scan-status" id="scanStatus">Align the big number inside the box</div>
-
-    <button class="capture-btn" id="captureBtn" onclick="captureOCR()">
-      📸 Capture Number
-    </button>
-
-    <div class="tip">
-      💡 Hold label flat · good light · number fills the box
-    </div>
+    <button class="capture-btn" id="captureBtn" onclick="captureOCR()">📸 Capture Number</button>
+    <div class="tip">💡 Hold label flat · good light · number fills the box</div>
   </div>
 </div>
 
@@ -191,11 +172,26 @@
     document.getElementById('modalOverlay').classList.add('active');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          focusMode: 'continuous'
+        }
       });
       document.getElementById('video').srcObject = stream;
       await document.getElementById('video').play();
-      document.getElementById('scanStatus').textContent = 'Align the big number inside the box';
+
+      // Lock button for 1.5s to let camera focus
+      document.getElementById('captureBtn').disabled = true;
+      document.getElementById('scanStatus').textContent = 'Camera focusing…';
+      document.getElementById('scanStatus').className = 'scan-status working';
+      setTimeout(() => {
+        document.getElementById('captureBtn').disabled = false;
+        document.getElementById('scanStatus').textContent = 'Align the big number inside the box';
+        document.getElementById('scanStatus').className = 'scan-status';
+      }, 1500);
+
     } catch (err) {
       document.getElementById('scanStatus').textContent = '⚠ Camera error: ' + err.message;
       document.getElementById('scanStatus').className = 'scan-status error';
@@ -223,54 +219,63 @@
     status.textContent = 'Processing image…';
     status.className = 'scan-status working';
 
-    // Capture full frame at high resolution
+    // Small delay after tap to let camera settle
+    await new Promise(r => setTimeout(r, 300));
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
 
-    // Crop only the bottom 35% of the image where big number lives
-    const cropY = Math.floor(canvas.height * 0.60);
-    const cropH = Math.floor(canvas.height * 0.35);
-    const cropCanvas = document.createElement('canvas');
-    cropCanvas.width = canvas.width;
-    cropCanvas.height = cropH;
-    const cropCtx = cropCanvas.getContext('2d');
+    // Try 3 crop regions — most forgiving on mobile
+    const attempts = [
+      { y: 0.00, h: 1.00 },  // full image
+      { y: 0.55, h: 0.40 },  // bottom half
+      { y: 0.65, h: 0.30 },  // tight bottom
+    ];
 
-    // Enhance contrast for better OCR
-    cropCtx.filter = 'contrast(2) brightness(1.1) grayscale(1)';
-    cropCtx.drawImage(canvas, 0, cropY, canvas.width, cropH, 0, 0, canvas.width, cropH);
+    let bestResult = null;
 
-    try {
-      const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789',  // digits only for big number
-        tessedit_pageseg_mode: '7',              // single line mode
-      });
+    for (const attempt of attempts) {
+      const cropY = Math.floor(canvas.height * attempt.y);
+      const cropH = Math.floor(canvas.height * attempt.h);
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = canvas.width * 2;
+      cropCanvas.height = cropH * 2;
+      const cropCtx = cropCanvas.getContext('2d');
+      cropCtx.filter = 'contrast(2.5) brightness(1.2) grayscale(1)';
+      cropCtx.drawImage(
+        canvas,
+        0, cropY, canvas.width, cropH,
+        0, 0, cropCanvas.width, cropCanvas.height
+      );
 
-      const { data: { text } } = await worker.recognize(cropCanvas);
-      await worker.terminate();
+      try {
+        const worker = await Tesseract.createWorker('eng');
+        await worker.setParameters({
+          tessedit_char_whitelist: '0123456789',
+          tessedit_pageseg_mode: '6',
+        });
+        const { data: { text } } = await worker.recognize(cropCanvas);
+        await worker.terminate();
 
-      // Extract longest digit sequence (our 12-digit number)
-      const matches = text.replace(/\s/g, '').match(/\d+/g);
-      if (matches) {
-        // Pick the longest number found
-        const best = matches.reduce((a, b) => a.length >= b.length ? a : b);
-        if (best.length >= 8) {
-          fillAndClose(best, `✓ Captured: ${best}`);
-        } else {
-          status.textContent = '⚠ Number too short — try again, hold steady';
-          status.className = 'scan-status error';
-          btn.disabled = false;
-          btn.textContent = '📸 Capture Number';
+        const matches = text.replace(/\s/g, '').match(/\d+/g);
+        if (matches) {
+          const best = matches.reduce((a, b) => a.length >= b.length ? a : b);
+          if (best.length >= 8) {
+            if (!bestResult || best.length > bestResult.length) {
+              bestResult = best;
+            }
+          }
         }
-      } else {
-        status.textContent = '⚠ No number found — ensure good lighting';
-        status.className = 'scan-status error';
-        btn.disabled = false;
-        btn.textContent = '📸 Capture Number';
-      }
-    } catch (err) {
-      status.textContent = '⚠ Failed: ' + err.message;
+      } catch (e) { /* try next crop */ }
+
+      if (bestResult && bestResult.length >= 12) break;
+    }
+
+    if (bestResult) {
+      fillAndClose(bestResult, `✓ Captured: ${bestResult}`);
+    } else {
+      status.textContent = '⚠ Try again — hold steady & ensure bright light';
       status.className = 'scan-status error';
       btn.disabled = false;
       btn.textContent = '📸 Capture Number';
