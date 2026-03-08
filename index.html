@@ -6,7 +6,6 @@
   <meta http-equiv="Permissions-Policy" content="camera=*">
   <title>Data Entry</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
-  <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -76,9 +75,9 @@
     canvas { display: none; }
     .target-zone {
       position: absolute; left: 5%; right: 5%;
-      bottom: 10%; height: 28%;
+      bottom: 8%; height: 30%;
       border: 2px solid var(--accent); border-radius: 6px;
-      box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.5);
     }
     .target-label {
       position: absolute; top: -22px; left: 0;
@@ -92,7 +91,7 @@
     .corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
     .scan-status {
       margin-top: 0.8rem; text-align: center;
-      font-size: 0.75rem; color: var(--muted); min-height: 1.4rem;
+      font-size: 0.75rem; color: var(--muted); min-height: 1.4rem; line-height: 1.5;
     }
     .scan-status.found { color: var(--accent); font-weight: 500; }
     .scan-status.error { color: #ff6b6b; }
@@ -106,7 +105,7 @@
     }
     .capture-btn:hover { background: #d8ff3a; transform: translateY(-1px); }
     .capture-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    .tip { margin-top: 0.8rem; font-size: 0.68rem; color: #444; text-align: center; line-height: 1.5; }
+    .tip { margin-top: 0.8rem; font-size: 0.68rem; color: #444; text-align: center; line-height: 1.6; }
     button.submit-btn {
       margin-top: 1.8rem; width: 100%; background: var(--accent);
       color: #0f0f0f; border: none; border-radius: 8px; padding: 0.85rem;
@@ -139,7 +138,6 @@
   <div class="footer">TESTSHEET · GOOGLE SHEETS CONNECTOR</div>
 </div>
 
-<!-- Camera Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
@@ -158,12 +156,13 @@
       </div>
     </div>
     <div class="scan-status" id="scanStatus">Align the big number inside the box</div>
-    <button class="capture-btn" id="captureBtn" onclick="captureOCR()">📸 Capture Number</button>
-    <div class="tip">💡 Hold label flat · good light · number fills the box</div>
+    <button class="capture-btn" id="captureBtn" onclick="captureAndRead()">📸 Capture Number</button>
+    <div class="tip">💡 Hold label flat · fill the frame · good lighting</div>
   </div>
 </div>
 
 <script>
+  // 🔧 Replace with your Apps Script Web App URL
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyNXsuOGzu0CV9cpfUrt7ZGH1D5mWWssPzqtLKp4Eb0k0WtzHlxkILQH7ns1rvZx6CGAA/exec";
 
   let stream = null;
@@ -172,17 +171,10 @@
     document.getElementById('modalOverlay').classList.add('active');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          focusMode: 'continuous'
-        }
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
       document.getElementById('video').srcObject = stream;
       await document.getElementById('video').play();
-
-      // Lock button for 1.5s to let camera focus
       document.getElementById('captureBtn').disabled = true;
       document.getElementById('scanStatus').textContent = 'Camera focusing…';
       document.getElementById('scanStatus').className = 'scan-status working';
@@ -191,7 +183,6 @@
         document.getElementById('scanStatus').textContent = 'Align the big number inside the box';
         document.getElementById('scanStatus').className = 'scan-status';
       }, 1500);
-
     } catch (err) {
       document.getElementById('scanStatus').textContent = '⚠ Camera error: ' + err.message;
       document.getElementById('scanStatus').className = 'scan-status error';
@@ -207,7 +198,7 @@
     document.getElementById('scanStatus').className = 'scan-status';
   }
 
-  async function captureOCR() {
+  async function captureAndRead() {
     const btn = document.getElementById('captureBtn');
     const status = document.getElementById('scanStatus');
     const video = document.getElementById('video');
@@ -216,66 +207,36 @@
 
     btn.disabled = true;
     btn.textContent = '⏳ Reading…';
-    status.textContent = 'Processing image…';
+    status.textContent = 'Sending to Gemini…';
     status.className = 'scan-status working';
 
-    // Small delay after tap to let camera settle
     await new Promise(r => setTimeout(r, 300));
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
 
-    // Try 3 crop regions — most forgiving on mobile
-    const attempts = [
-      { y: 0.00, h: 1.00 },  // full image
-      { y: 0.55, h: 0.40 },  // bottom half
-      { y: 0.65, h: 0.30 },  // tight bottom
-    ];
+    const base64Image = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 
-    let bestResult = null;
+    try {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'readLabel', image: base64Image })
+      });
 
-    for (const attempt of attempts) {
-      const cropY = Math.floor(canvas.height * attempt.y);
-      const cropH = Math.floor(canvas.height * attempt.h);
-      const cropCanvas = document.createElement('canvas');
-      cropCanvas.width = canvas.width * 2;
-      cropCanvas.height = cropH * 2;
-      const cropCtx = cropCanvas.getContext('2d');
-      cropCtx.filter = 'contrast(2.5) brightness(1.2) grayscale(1)';
-      cropCtx.drawImage(
-        canvas,
-        0, cropY, canvas.width, cropH,
-        0, 0, cropCanvas.width, cropCanvas.height
-      );
+      const data = await response.json();
 
-      try {
-        const worker = await Tesseract.createWorker('eng');
-        await worker.setParameters({
-          tessedit_char_whitelist: '0123456789',
-          tessedit_pageseg_mode: '6',
-        });
-        const { data: { text } } = await worker.recognize(cropCanvas);
-        await worker.terminate();
-
-        const matches = text.replace(/\s/g, '').match(/\d+/g);
-        if (matches) {
-          const best = matches.reduce((a, b) => a.length >= b.length ? a : b);
-          if (best.length >= 8) {
-            if (!bestResult || best.length > bestResult.length) {
-              bestResult = best;
-            }
-          }
-        }
-      } catch (e) { /* try next crop */ }
-
-      if (bestResult && bestResult.length >= 12) break;
-    }
-
-    if (bestResult) {
-      fillAndClose(bestResult, `✓ Captured: ${bestResult}`);
-    } else {
-      status.textContent = '⚠ Try again — hold steady & ensure bright light';
+      if (data.result && data.result.length >= 8) {
+        fillAndClose(data.result, `✓ Captured: ${data.result}`);
+      } else {
+        status.textContent = '⚠ Could not read — try again with better lighting';
+        status.className = 'scan-status error';
+        btn.disabled = false;
+        btn.textContent = '📸 Capture Number';
+      }
+    } catch (err) {
+      status.textContent = '⚠ Error: ' + err.message;
       status.className = 'scan-status error';
       btn.disabled = false;
       btn.textContent = '📸 Capture Number';
@@ -302,18 +263,22 @@
     btn.disabled = true;
     btn.textContent = "Submitting…";
     try {
-      await fetch(APPS_SCRIPT_URL, {
+      const response = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
-        mode: "no-cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serial })
+        body: JSON.stringify({ action: 'saveData', serial: serial })
       });
-      status.className = "status success";
-      status.textContent = "✓ Row added to testsheet!";
-      document.getElementById("serial").value = "";
+      const data = await response.json();
+      if (data.status === 'success') {
+        status.className = "status success";
+        status.textContent = "✓ Row added to testsheet!";
+        document.getElementById("serial").value = "";
+      } else {
+        throw new Error(data.error || 'Unknown error');
+      }
     } catch (err) {
       status.className = "status error";
-      status.textContent = "✗ Submission failed.";
+      status.textContent = "✗ Submission failed: " + err.message;
     }
     btn.disabled = false;
     btn.textContent = "Submit to Sheet";
