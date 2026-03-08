@@ -6,8 +6,7 @@
   <meta http-equiv="Permissions-Policy" content="camera=*">
   <title>Data Entry</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.20.0/zxing.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+  <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -67,42 +66,59 @@
     }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
     .modal-title { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700; }
-    .close-btn { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 4px; }
+    .close-btn { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 0.2rem 0.4rem; }
     .close-btn:hover { color: var(--text); }
-    .video-wrap { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: #000; aspect-ratio: 4/3; }
+
+    .video-wrap {
+      position: relative; width: 100%; border-radius: 10px;
+      overflow: hidden; background: #000; aspect-ratio: 4/3;
+    }
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
     canvas { display: none; }
-    .scan-line {
-      position: absolute; left: 10%; right: 10%; height: 2px;
-      background: var(--accent); box-shadow: 0 0 8px var(--accent);
-      animation: scanMove 2s ease-in-out infinite; top: 20%;
+
+    /* Target zone overlay - highlights bottom portion where big number is */
+    .target-zone {
+      position: absolute;
+      left: 5%; right: 5%;
+      bottom: 10%; height: 28%;
+      border: 2px solid var(--accent);
+      border-radius: 6px;
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
     }
-    @keyframes scanMove { 0%, 100% { top: 20%; } 50% { top: 75%; } }
-    .viewfinder { position: absolute; inset: 15%; border: 2px solid rgba(200,241,53,0.4); border-radius: 8px; }
-    .corner { position: absolute; width: 16px; height: 16px; border-color: var(--accent); border-style: solid; }
-    .corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-    .corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-    .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-    .corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
-    .scan-status { margin-top: 0.8rem; text-align: center; font-size: 0.75rem; color: var(--muted); min-height: 1.2rem; }
-    .scan-status.found { color: var(--accent); }
-    .scan-status.ocr { color: #f0a500; }
-    .mode-tabs { display: flex; gap: 0.5rem; margin-top: 1rem; }
-    .mode-tab {
-      flex: 1; padding: 0.5rem; border-radius: 6px;
-      border: 1px solid var(--border); background: var(--bg);
-      color: var(--muted); font-family: 'DM Mono', monospace;
-      font-size: 0.72rem; cursor: pointer; text-align: center; transition: all 0.2s;
+    .target-label {
+      position: absolute; top: -22px; left: 0;
+      font-size: 0.65rem; color: var(--accent);
+      letter-spacing: 0.1em; text-transform: uppercase;
     }
-    .mode-tab.active { background: rgba(200,241,53,0.1); border-color: var(--accent); color: var(--accent); }
+    .corner { position: absolute; width: 14px; height: 14px; border-color: var(--accent); border-style: solid; }
+    .corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 3px 0 0 0; }
+    .corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 3px 0 0; }
+    .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 3px; }
+    .corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
+
+    .scan-status {
+      margin-top: 0.8rem; text-align: center;
+      font-size: 0.75rem; color: var(--muted); min-height: 1.4rem;
+    }
+    .scan-status.found { color: var(--accent); font-weight: 500; }
+    .scan-status.error { color: #ff6b6b; }
+    .scan-status.working { color: #f0a500; }
+
     .capture-btn {
       width: 100%; margin-top: 1rem; background: var(--accent); color: #0f0f0f;
-      border: none; border-radius: 8px; padding: 0.75rem;
-      font-family: 'Syne', sans-serif; font-size: 0.9rem; font-weight: 700;
-      cursor: pointer; transition: background 0.15s, transform 0.15s; display: none;
+      border: none; border-radius: 8px; padding: 0.85rem;
+      font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 700;
+      cursor: pointer; transition: background 0.15s, transform 0.15s;
+      letter-spacing: 0.05em;
     }
     .capture-btn:hover { background: #d8ff3a; transform: translateY(-1px); }
-    .capture-btn.visible { display: block; }
+    .capture-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .tip {
+      margin-top: 0.8rem; font-size: 0.68rem; color: #444;
+      text-align: center; line-height: 1.5;
+    }
+
     button.submit-btn {
       margin-top: 1.8rem; width: 100%; background: var(--accent);
       color: #0f0f0f; border: none; border-radius: 8px; padding: 0.85rem;
@@ -121,124 +137,78 @@
 <div class="card">
   <div class="sheet-label">testsheet · col A</div>
   <h1>Data Entry</h1>
-  <p class="sub">Type, scan, or capture a number</p>
+  <p class="sub">Scan label or type serial number</p>
   <div class="divider"></div>
   <label for="serial">Serial</label>
   <div class="input-row">
-    <input type="text" id="serial" placeholder="e.g. SN-00142" autocomplete="off"/>
-    <button class="scan-btn" onclick="openScanner()" title="Scan with camera">📷</button>
+    <input type="text" id="serial" placeholder="e.g. 250324960024" autocomplete="off"/>
+    <button class="scan-btn" onclick="openScanner()" title="Scan label">📷</button>
   </div>
-  <div class="field-hint">Maps to → Serial (Column A)</div>
+  <div class="field-hint">Maps to → Serial (Column A) · 12-digit number</div>
   <button class="submit-btn" id="submitBtn" onclick="handleSubmit()">Submit to Sheet</button>
   <div class="status" id="status"></div>
   <div class="footer">TESTSHEET · GOOGLE SHEETS CONNECTOR</div>
 </div>
 
+<!-- Camera Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">📷 Scan Serial</span>
+      <span class="modal-title">📷 Scan Label</span>
       <button class="close-btn" onclick="closeScanner()">✕</button>
     </div>
+
     <div class="video-wrap">
       <video id="video" autoplay playsinline muted></video>
       <canvas id="canvas"></canvas>
-      <div class="scan-line"></div>
-      <div class="viewfinder">
-        <div class="corner tl"></div><div class="corner tr"></div>
-        <div class="corner bl"></div><div class="corner br"></div>
+      <div class="target-zone">
+        <div class="target-label">Align big number here</div>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
       </div>
     </div>
-    <div class="scan-status" id="scanStatus">Initializing camera…</div>
-    <div class="mode-tabs">
-      <div class="mode-tab active" id="tabBarcode" onclick="setMode('barcode')">⚡ Barcode / QR</div>
-      <div class="mode-tab" id="tabOCR" onclick="setMode('ocr')">🔤 Plain Number</div>
+
+    <div class="scan-status" id="scanStatus">Align the big number inside the box</div>
+
+    <button class="capture-btn" id="captureBtn" onclick="captureOCR()">
+      📸 Capture Number
+    </button>
+
+    <div class="tip">
+      💡 Hold label flat · good light · number fills the box
     </div>
-    <button class="capture-btn" id="captureBtn" onclick="captureOCR()">📸 Capture & Read Number</button>
   </div>
 </div>
 
 <script>
-  // 🔧 PASTE YOUR APPS SCRIPT WEB APP URL HERE
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyNXsuOGzu0CV9cpfUrt7ZGH1D5mWWssPzqtLKp4Eb0k0WtzHlxkILQH7ns1rvZx6CGAA/exec";
 
   let stream = null;
-  let barcodeReader = null;
-  let scanMode = 'barcode';
-  let barcodeInterval = null;
-
-  function setMode(mode) {
-    scanMode = mode;
-    document.getElementById('tabBarcode').classList.toggle('active', mode === 'barcode');
-    document.getElementById('tabOCR').classList.toggle('active', mode === 'ocr');
-    document.getElementById('captureBtn').classList.toggle('visible', mode === 'ocr');
-    if (mode === 'barcode') {
-      document.getElementById('scanStatus').textContent = 'Point at a barcode or QR code…';
-      document.getElementById('scanStatus').className = 'scan-status';
-      startBarcodeScanning();
-    } else {
-      document.getElementById('scanStatus').textContent = 'Frame the number, then tap Capture.';
-      document.getElementById('scanStatus').className = 'scan-status ocr';
-      stopBarcodeScanning();
-    }
-  }
 
   async function openScanner() {
     document.getElementById('modalOverlay').classList.add('active');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
       document.getElementById('video').srcObject = stream;
       await document.getElementById('video').play();
-      setMode('barcode');
+      document.getElementById('scanStatus').textContent = 'Align the big number inside the box';
     } catch (err) {
       document.getElementById('scanStatus').textContent = '⚠ Camera error: ' + err.message;
+      document.getElementById('scanStatus').className = 'scan-status error';
     }
   }
 
   function closeScanner() {
-    stopBarcodeScanning();
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     document.getElementById('modalOverlay').classList.remove('active');
-    document.getElementById('scanStatus').textContent = 'Initializing camera…';
-  }
-
-  function startBarcodeScanning() {
-    stopBarcodeScanning();
-    try {
-      const hints = new Map();
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.DATA_MATRIX,
-        ZXing.BarcodeFormat.ITF, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
-      ]);
-      barcodeReader = new ZXing.MultiFormatReader();
-      barcodeReader.setHints(hints);
-    } catch(e) { return; }
-
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-
-    barcodeInterval = setInterval(() => {
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      try {
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const luminance = new ZXing.RGBLuminanceSource(imgData.data, canvas.width, canvas.height);
-        const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminance));
-        const result = barcodeReader.decode(bitmap);
-        if (result) fillAndClose(result.getText(), '⚡ Barcode detected!');
-      } catch (e) {}
-    }, 300);
-  }
-
-  function stopBarcodeScanning() {
-    if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
+    document.getElementById('captureBtn').disabled = false;
+    document.getElementById('captureBtn').textContent = '📸 Capture Number';
+    document.getElementById('scanStatus').textContent = 'Align the big number inside the box';
+    document.getElementById('scanStatus').className = 'scan-status';
   }
 
   async function captureOCR() {
@@ -247,29 +217,63 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+
     btn.disabled = true;
     btn.textContent = '⏳ Reading…';
-    status.textContent = 'Running OCR, please wait…';
+    status.textContent = 'Processing image…';
+    status.className = 'scan-status working';
+
+    // Capture full frame at high resolution
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
+
+    // Crop only the bottom 35% of the image where big number lives
+    const cropY = Math.floor(canvas.height * 0.60);
+    const cropH = Math.floor(canvas.height * 0.35);
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = canvas.width;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext('2d');
+
+    // Enhance contrast for better OCR
+    cropCtx.filter = 'contrast(2) brightness(1.1) grayscale(1)';
+    cropCtx.drawImage(canvas, 0, cropY, canvas.width, cropH, 0, 0, canvas.width, cropH);
+
     try {
       const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({ tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_.' });
-      const { data: { text } } = await worker.recognize(canvas);
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789',  // digits only for big number
+        tessedit_pageseg_mode: '7',              // single line mode
+      });
+
+      const { data: { text } } = await worker.recognize(cropCanvas);
       await worker.terminate();
-      const match = text.replace(/\s+/g, ' ').trim().match(/[A-Za-z0-9][A-Za-z0-9\-_.]+/);
-      if (match) {
-        fillAndClose(match[0], '🔤 Text captured via OCR!');
+
+      // Extract longest digit sequence (our 12-digit number)
+      const matches = text.replace(/\s/g, '').match(/\d+/g);
+      if (matches) {
+        // Pick the longest number found
+        const best = matches.reduce((a, b) => a.length >= b.length ? a : b);
+        if (best.length >= 8) {
+          fillAndClose(best, `✓ Captured: ${best}`);
+        } else {
+          status.textContent = '⚠ Number too short — try again, hold steady';
+          status.className = 'scan-status error';
+          btn.disabled = false;
+          btn.textContent = '📸 Capture Number';
+        }
       } else {
-        status.textContent = '⚠ No text found — try again.';
+        status.textContent = '⚠ No number found — ensure good lighting';
+        status.className = 'scan-status error';
         btn.disabled = false;
-        btn.textContent = '📸 Capture & Read Number';
+        btn.textContent = '📸 Capture Number';
       }
     } catch (err) {
-      status.textContent = '⚠ OCR failed: ' + err.message;
+      status.textContent = '⚠ Failed: ' + err.message;
+      status.className = 'scan-status error';
       btn.disabled = false;
-      btn.textContent = '📸 Capture & Read Number';
+      btn.textContent = '📸 Capture Number';
     }
   }
 
@@ -277,7 +281,7 @@
     document.getElementById('scanStatus').textContent = msg;
     document.getElementById('scanStatus').className = 'scan-status found';
     document.getElementById('serial').value = value;
-    setTimeout(() => closeScanner(), 800);
+    setTimeout(() => closeScanner(), 1000);
   }
 
   async function handleSubmit() {
